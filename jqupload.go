@@ -9,13 +9,9 @@
  * http://www.opensource.org/licenses/MIT
  */
 
-package app
+package jqupload
 
 import (
-	"appengine"
-	"appengine/blobstore"
-	"appengine/memcache"
-	"appengine/taskqueue"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -28,7 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"resize"
+	"github.com/jmcvetta/jqupload/resize"
 	"strings"
 	"time"
 )
