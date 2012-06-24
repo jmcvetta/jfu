@@ -9,140 +9,75 @@
  * http://www.opensource.org/licenses/MIT
  */
 
-package jqupload
+package jfup
 
 import (
+	//	"appengine"
+	//	"appengine/blobstore"
+	//	"appengine/memcache"
+	//	"appengine/taskqueue"
 	"bytes"
-	"encoding/base64"
+	// "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"image"
-	"image/png"
+	"github.com/bradfitz/gomemcache/memcache"
+	// "github.com/jmcvetta/jqupload/resize"
+	// "image"
+	// "image/gif"
+	// "image/jpeg"
+	// "image/png"
 	"io"
+	"labix.org/v2/mgo"
+	// "labix.org/v2/mgo/bson"
 	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"regexp"
-	"github.com/jmcvetta/jqupload/resize"
 	"strings"
 	"time"
 )
 
-import _ "image/gif"
-import _ "image/jpeg"
-
-const (
-	WEBSITE              = "http://blueimp.github.com/jQuery-File-Upload/"
-	MIN_FILE_SIZE        = 1       // bytes
-	MAX_FILE_SIZE        = 5000000 // bytes
-	IMAGE_TYPES          = "image/(gif|p?jpeg|(x-)?png)"
-	ACCEPT_FILE_TYPES    = IMAGE_TYPES
-	EXPIRATION_TIME      = 300 // seconds
-	THUMBNAIL_MAX_WIDTH  = 80
-	THUMBNAIL_MAX_HEIGHT = THUMBNAIL_MAX_WIDTH
-)
-
-var (
-	imageTypes      = regexp.MustCompile(IMAGE_TYPES)
-	acceptFileTypes = regexp.MustCompile(ACCEPT_FILE_TYPES)
-)
-
-type FileInfo struct {
-	Key          appengine.BlobKey `json:"-"`
-	Url          string            `json:"url,omitempty"`
-	ThumbnailUrl string            `json:"thumbnail_url,omitempty"`
-	Name         string            `json:"name"`
-	Type         string            `json:"type"`
-	Size         int64             `json:"size"`
-	Error        string            `json:"error,omitempty"`
-	DeleteUrl    string            `json:"delete_url,omitempty"`
-	DeleteType   string            `json:"delete_type,omitempty"`
+// An implementation of UploadHandler based on MongoDB
+type mongoHandler struct {
+	col   *mgo.Collection  // Collection where file info will be stored
+	fs    *mgo.GridFS      // GridFS where file blob will be stored
+	cache *memcache.Client // Memcache client (optional)
 }
 
-func (fi *FileInfo) ValidateType() (valid bool) {
-	if acceptFileTypes.MatchString(fi.Type) {
-		return true
-	}
-	fi.Error = "acceptFileTypes"
-	return false
-}
-
-func (fi *FileInfo) ValidateSize() (valid bool) {
-	if fi.Size < MIN_FILE_SIZE {
-		fi.Error = "minFileSize"
-	} else if fi.Size > MAX_FILE_SIZE {
-		fi.Error = "maxFileSize"
-	} else {
-		return true
-	}
-	return false
-}
-
-func (fi *FileInfo) CreateUrls(r *http.Request, c appengine.Context) {
-	u := &url.URL{
-		Scheme: r.URL.Scheme,
-		Host:   appengine.DefaultVersionHostname(c),
-		Path:   "/",
-	}
-	uString := u.String()
-	fi.Url = uString + escape(string(fi.Key)) + "/" +
-		escape(string(fi.Name))
-	fi.DeleteUrl = fi.Url
-	fi.DeleteType = "DELETE"
-	if fi.ThumbnailUrl != "" && -1 == strings.Index(
-		r.Header.Get("Accept"),
-		"application/json",
-	) {
-		fi.ThumbnailUrl = uString + "thumbnails/" +
-			escape(string(fi.Key))
-	}
-}
-
-func (fi *FileInfo) CreateThumbnail(r io.Reader, c appengine.Context) (data []byte, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			log.Println(rec)
-			// 1x1 pixel transparent GIf, bas64 encoded:
-			s := "R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
-			data, _ = base64.StdEncoding.DecodeString(s)
-			fi.ThumbnailUrl = "data:image/gif;base64," + s
-		}
-		memcache.Add(c, &memcache.Item{
-			Key:        string(fi.Key),
-			Value:      data,
-			Expiration: EXPIRATION_TIME,
-		})
-	}()
-	img, _, err := image.Decode(r)
-	check(err)
-	if bounds := img.Bounds(); bounds.Dx() > THUMBNAIL_MAX_WIDTH ||
-		bounds.Dy() > THUMBNAIL_MAX_HEIGHT {
-		w, h := THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT
-		if bounds.Dx() > bounds.Dy() {
-			h = bounds.Dy() * h / bounds.Dx()
+func (h *mongoHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	params, err := url.ParseQuery(r.URL.RawQuery)
+	check(err, w)
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add(
+		"Access-Control-Allow-Methods",
+		"OPTIONS, HEAD, GET, POST, PUT, DELETE",
+	)
+	switch r.Method {
+	// case "OPTIONS":
+	// case "HEAD":
+	case "GET":
+		h.get(w, r)
+	case "POST":
+		if len(params["_method"]) > 0 && params["_method"][0] == "DELETE" {
+			h.delete(w, r)
 		} else {
-			w = bounds.Dx() * w / bounds.Dy()
+			h.post(w, r)
 		}
-		img = resize.Resize(img, img.Bounds(), w, h)
+	case "DELETE":
+		h.delete(w, r)
+	default:
+		http.Error(w, "501 Not Implemented", http.StatusNotImplemented)
 	}
-	var b bytes.Buffer
-	err = png.Encode(&b, img)
-	check(err)
-	data = b.Bytes()
-	fi.ThumbnailUrl = "data:image/png;base64," +
-		base64.StdEncoding.EncodeToString(data)
-	return
+
 }
 
-func check(err error) {
-	if err != nil {
-		panic(err)
-	}
+func (h *mongoHandler) get(w http.ResponseWriter, r *http.Request) {
 }
 
-func escape(s string) string {
-	return strings.Replace(url.QueryEscape(s), "+", "%20", -1)
+func (h *mongoHandler) delete(w http.ResponseWriter, r *http.Request) {
+}
+
+func (h *mongoHandler) post(w http.ResponseWriter, r *http.Request) {
 }
 
 func delayedDelete(c appengine.Context, fi *FileInfo) {
@@ -351,7 +286,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func init() {
-	http.HandleFunc("/", handle)
-	http.HandleFunc("/thumbnails/", serveThumbnail)
-}
+// func init() {
+// 	http.HandleFunc("/", handle)
+// 	http.HandleFunc("/thumbnails/", serveThumbnail)
+// }
