@@ -20,7 +20,7 @@ package jfu
 import (
 	"github.com/bradfitz/gomemcache/memcache"
 	"labix.org/v2/mgo"
-	// "labix.org/v2/mgo/bson"
+	"labix.org/v2/mgo/bson"
 )
 
 // An implementation of UploadHandler based on MongoDB
@@ -34,8 +34,17 @@ type mongoStore struct {
 	fs  *mgo.GridFS     // GridFS where file blob will be stored
 }
 
-func (s *mongoStore) Exists(key string) bool {
+func (s *mongoStore) Exists(key string) (bool, error) {
 	// blobKey := appengine.BlobKey(key)
 	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
-	s.fs.Find()
+	q := s.fs.Find(bson.M{"_id": key})
+	cnt, err := q.Count()
+	if err != nil {
+		return false, err
+	}
+	if cnt > 0 {
+		return true, nil
+	} else {
+		return false, nil
+	}
 }
