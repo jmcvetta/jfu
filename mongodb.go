@@ -1,15 +1,21 @@
 /*
+ * (c) 2012 Jason McVetta.  This is Free Software, released under the terms of
+ * the GPL v3.  See http://www.gnu.org/copyleft/gpl.html for details.
+ * 
+ *
+ * Derived from: 
+ *
  * jQuery File Upload Plugin GAE Go Example 2.0
  * https://github.com/blueimp/jQuery-File-Upload
  *
  * Copyright 2011, Sebastian Tschan
  * https://blueimp.net
  *
- * Licensed under the MIT license:
+ * Original software by Tschan licensed under the MIT license:
  * http://www.opensource.org/licenses/MIT
  */
-
-package jfup
+ 
+package jfu
 
 import (
 	//	"appengine"
@@ -39,14 +45,18 @@ import (
 
 // An implementation of UploadHandler based on MongoDB
 type mongoHandler struct {
+	conf Config // UploadHandler configuration
+	cache *memcache.Client // Memcache client (optional)
+}
+
+type mongoStore struct {
 	col   *mgo.Collection  // Collection where file info will be stored
 	fs    *mgo.GridFS      // GridFS where file blob will be stored
-	cache *memcache.Client // Memcache client (optional)
 }
 
 func (h *mongoHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	params, err := url.ParseQuery(r.URL.RawQuery)
-	check(err, w)
+	http500(err, w)
 	w.Header().Add("Access-Control-Allow-Origin", "*")
 	w.Header().Add(
 		"Access-Control-Allow-Methods",
@@ -71,7 +81,42 @@ func (h *mongoHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func (s *mongoStore) Exists(key string) bool {
+	// blobKey := appengine.BlobKey(key)
+	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
+	s.fs.Find()
+}
+
 func (h *mongoHandler) get(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		http.Redirect(w, r, WEBSITE, http.StatusFound)
+		return
+	}
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) == 3 {
+		if key := parts[1]; key != "" {
+			blobKey := appengine.BlobKey(key)
+			bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
+			if err == nil {
+				w.Header().Add(
+					"Cache-Control",
+					fmt.Sprintf("public,max-age=%d", EXPIRATION_TIME),
+				)
+				if imageTypes.MatchString(bi.ContentType) {
+					w.Header().Add("X-Content-Type-Options", "nosniff")
+				} else {
+					w.Header().Add("Content-Type", "application/octet-stream")
+					w.Header().Add(
+						"Content-Disposition:",
+						fmt.Sprintf("attachment; filename=%s;", parts[2]),
+					)
+				}
+				blobstore.Send(w, appengine.BlobKey(key))
+				return
+			}
+		}
+	}
+	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
 
 func (h *mongoHandler) delete(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +158,7 @@ func handleUpload(r *http.Request, p *multipart.Part) (fi *FileInfo) {
 		w.Close()
 		fi.Size = MAX_FILE_SIZE + 1 - lr.N
 		fi.Key, err = w.Key()
-		check(err)
+		http500(err, w)
 		if !fi.ValidateSize() {
 			err := blobstore.Delete(context, fi.Key)
 			check(err)
@@ -158,38 +203,6 @@ func handleUploads(r *http.Request) (fileInfos []*FileInfo) {
 		part, err = mr.NextPart()
 	}
 	return
-}
-
-func get(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" {
-		http.Redirect(w, r, WEBSITE, http.StatusFound)
-		return
-	}
-	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) == 3 {
-		if key := parts[1]; key != "" {
-			blobKey := appengine.BlobKey(key)
-			bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
-			if err == nil {
-				w.Header().Add(
-					"Cache-Control",
-					fmt.Sprintf("public,max-age=%d", EXPIRATION_TIME),
-				)
-				if imageTypes.MatchString(bi.ContentType) {
-					w.Header().Add("X-Content-Type-Options", "nosniff")
-				} else {
-					w.Header().Add("Content-Type", "application/octet-stream")
-					w.Header().Add(
-						"Content-Disposition:",
-						fmt.Sprintf("attachment; filename=%s;", parts[2]),
-					)
-				}
-				blobstore.Send(w, appengine.BlobKey(key))
-				return
-			}
-		}
-	}
-	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
 
 func post(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +299,77 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// func init() {
-// 	http.HandleFunc("/", handle)
-// 	http.HandleFunc("/thumbnails/", serveThumbnail)
-// }
+func (fi *FileInfo) CreateUrls(r *http.Request, c appengine.Context) {
+	u := &url.URL{
+		Scheme: r.URL.Scheme,
+		Host:   appengine.DefaultVersionHostname(c),
+		Path:   "/",
+	}
+	uString := u.String()
+	fi.Url = uString + escape(string(fi.Key)) + "/" +
+		escape(string(fi.Name))
+	fi.DeleteUrl = fi.Url
+	fi.DeleteType = "DELETE"
+	if fi.ThumbnailUrl != "" && -1 == strings.Index(
+		r.Header.Get("Accept"),
+		"application/json",
+	) {
+		fi.ThumbnailUrl = uString + "thumbnails/" +
+			escape(string(fi.Key))
+	}
+}
+
+func (fi *FileInfo) CreateThumbnail(r io.Reader, c appengine.Context) (data []byte, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Println(rec)
+			// 1x1 pixel transparent GIf, bas64 encoded:
+			s := "R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+			data, _ = base64.StdEncoding.DecodeString(s)
+			fi.ThumbnailUrl = "data:image/gif;base64," + s
+		}
+		memcache.Add(c, &memcache.Item{
+			Key:        string(fi.Key),
+			Value:      data,
+			Expiration: EXPIRATION_TIME,
+		})
+	}()
+	img, _, err := image.Decode(r)
+	check(err)
+	if bounds := img.Bounds(); bounds.Dx() > THUMBNAIL_MAX_WIDTH ||
+		bounds.Dy() > THUMBNAIL_MAX_HEIGHT {
+		w, h := THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT
+		if bounds.Dx() > bounds.Dy() {
+			h = bounds.Dy() * h / bounds.Dx()
+		} else {
+			w = bounds.Dx() * w / bounds.Dy()
+		}
+		img = resize.Resize(img, img.Bounds(), w, h)
+	}
+	var b bytes.Buffer
+	err = png.Encode(&b, img)
+	check(err)
+	data = b.Bytes()
+	fi.ThumbnailUrl = "data:image/png;base64," +
+		base64.StdEncoding.EncodeToString(data)
+	return
+}
+
+func (h *mongoHandler) ValidateType(fi FileInfo) (valid bool) {
+	if h.conf.acceptRegex().MatchString(fi.Type) {
+		return true
+	}
+	fi.Error = "acceptFileTypes"
+	return false
+}
+
+func (h *mongoHandler) ValidateSize(fi FileInfo) (valid bool) {
+	if fi.Size < h.conf.MinFileSize {
+		fi.Error = "minFileSize"
+	} else if fi.Size > h.conf.MaxFileSize {
+		fi.Error = "maxFileSize"
+	} else {
+		return true
+	}
+	return false
+}
