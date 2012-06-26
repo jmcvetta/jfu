@@ -22,8 +22,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/jmcvetta/jfu/resize"
+	"image"
+	"image/png"
 	"io"
 	"log"
 	"mime/multipart"
@@ -31,9 +35,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"image"
-	"image/png"
-	"github.com/jmcvetta/jfu/resize"
 )
 
 const (
@@ -49,11 +50,13 @@ var (
 		ThumbnailMaxWidth:  80,
 		ThumbnailMaxHeight: 80,
 	}
-	imageRegex = regexp.MustCompile(IMAGE_TYPES)
+	imageRegex        = regexp.MustCompile(IMAGE_TYPES)
+	FileNotFoundError = errors.New("File Not Found")
 )
 
 // Config is used to configure an UploadHandler.
 type Config struct {
+	Url                string // Redirect here if called without arguments
 	MinFileSize        int    // bytes
 	MaxFileSize        int    // bytes
 	AcceptFileTypes    string // regular expression
@@ -63,8 +66,9 @@ type Config struct {
 }
 
 type DataStore interface {
-	Exists(string) (bool, error)                 // Check if a file exists for specified key
-	Create(*FileInfo, io.Reader) (string, error) // Create a new file and return its key
+	Exists(key string) (bool, error)                        // Check if a file exists for specified key
+	Create(contentType string, r io.Reader) (string, error) // Create a new file and return its key
+	Get(key string) (io.Reader, error)                      // Get the file blob associated with a key
 }
 
 // UploadHandler provides a functions to handle file upload and serve 
@@ -131,23 +135,24 @@ func (h *UploadHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 }
 
-/*
 func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
-		http.Redirect(w, r, WEBSITE, http.StatusFound)
+		http.Redirect(w, r, h.conf.Url, http.StatusFound)
 		return
 	}
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) == 3 {
 		if key := parts[1]; key != "" {
-			blobKey := appengine.BlobKey(key)
-			bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
-			if err == nil {
+			// blobKey := appengine.BlobKey(key)
+			// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
+			exists, err := h.store.Exists(key)
+			http500(2, err)
+			if exists {
 				w.Header().Add(
 					"Cache-Control",
-					fmt.Sprintf("public,max-age=%d", EXPIRATION_TIME),
+					fmt.Sprintf("public,max-age=%d", h.conf.ExpirationTime),
 				)
-				if imageTypes.MatchString(bi.ContentType) {
+				if imageRegex.MatchString(bi.ContentType) {
 					w.Header().Add("X-Content-Type-Options", "nosniff")
 				} else {
 					w.Header().Add("Content-Type", "application/octet-stream")
@@ -156,14 +161,13 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 						fmt.Sprintf("attachment; filename=%s;", parts[2]),
 					)
 				}
-				blobstore.Send(w, appengine.BlobKey(key))
+				// blobstore.Send(w, appengine.BlobKey(key))
 				return
 			}
 		}
 	}
 	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
-*/
 
 func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi *FileInfo) {
 	fi = &FileInfo{

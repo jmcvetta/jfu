@@ -18,16 +18,10 @@
 package jfu
 
 import (
-	"github.com/bradfitz/gomemcache/memcache"
+	"io"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 )
-
-// An implementation of UploadHandler based on MongoDB
-type mongoHandler struct {
-	conf  Config           // UploadHandler configuration
-	cache *memcache.Client // Memcache client (optional)
-}
 
 type mongoStore struct {
 	col *mgo.Collection // Collection where file info will be stored
@@ -47,4 +41,28 @@ func (s *mongoStore) Exists(key string) (bool, error) {
 	} else {
 		return false, nil
 	}
+}
+
+func (s *mongoStore) Create(contentType string, r io.Reader) (key string, err error) {
+	file, err := s.fs.Create("")
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	file.SetContentType(contentType)
+	_, err = io.Copy(file, r)
+	if err != nil {
+		return
+	}
+	key = file.Id().(bson.ObjectId).Hex()
+	return
+}
+
+func (s *mongoStore) Get(key string) (r io.Reader, err error) {
+	// blobKey := appengine.BlobKey(key)
+	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
+	// blobstore.Send(w, appengine.BlobKey(key))
+	id := bson.ObjectIdHex(key)
+	r, err = s.fs.OpenId(id)
+	return
 }
