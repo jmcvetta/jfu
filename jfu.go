@@ -43,6 +43,7 @@ const (
 
 var (
 	defaultConfig = Config{
+		RootUrl:            "http://foobar.com",
 		MinFileSize:        1,
 		MaxFileSize:        2,
 		AcceptFileTypes:    IMAGE_TYPES,
@@ -136,6 +137,10 @@ func (h *UploadHandler) Handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
+	// 
+	// Seems kinda sloppy to be splitting the URL like this.  Would be nicer
+	// to use configurable regex or similar
+	//
 	if r.URL.Path == "/" {
 		http.Redirect(w, r, h.conf.Url, http.StatusFound)
 		return
@@ -146,7 +151,7 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 			// blobKey := appengine.BlobKey(key)
 			// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
 			exists, err := h.store.Exists(key)
-			http500(2, err)
+			http500(w, err)
 			if exists {
 				w.Header().Add(
 					"Cache-Control",
@@ -166,6 +171,8 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	//
+	//
 	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
 
@@ -208,16 +215,15 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 		return
 	}
 	//
+	// Save to data store
 	//
-	// Use LimitedReader for safetey even tho we have already validated file size
-	// var lr io.Reader
-	//  lr = &io.LimitedReader{R: p, N: MAX_FILE_SIZE + 1} // Why is N = max + 1? EOF character?  Was that way in orig code. - JM 25 June 2012
-	// Copy buffer to feed to thumbnailer
-	//
-	key, err := h.store.Create(fi, &bSave)
+	key, err := h.store.Create(fi.Type, &bSave)
 	http500(w, err)
 	fi.Size = size
 	fi.Key = key
+	//
+	// Create thumbnail
+	//
 	if isImage && size > 0 {
 		_, err = h.CreateThumbnail(fi, &bThumb)
 		http500(w, err)

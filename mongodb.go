@@ -28,34 +28,36 @@ type mongoStore struct {
 	fs  *mgo.GridFS     // GridFS where file blob will be stored
 }
 
-func (s *mongoStore) Exists(key string) (bool, error) {
+// Exists checks whether a blob identified by key exists in the data store
+func (s *mongoStore) Exists(key string) (result bool, err error) {
 	// blobKey := appengine.BlobKey(key)
 	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
 	q := s.fs.Find(bson.M{"_id": key})
 	cnt, err := q.Count()
 	if err != nil {
-		return false, err
+		return
 	}
 	if cnt > 0 {
-		return true, nil
+		result = true
 	} else {
-		return false, nil
+		result = false
 	}
+	return
 }
 
-func (s *mongoStore) Create(contentType string, r io.Reader) (key string, err error) {
-	file, err := s.fs.Create("")
+func (s *mongoStore) Create(fi FileInfo, r io.Reader) (FileInfo, error) {
+	file, err := s.fs.Create(fi.Name)
 	if err != nil {
-		return
+		return fi, err
 	}
 	defer file.Close()
-	file.SetContentType(contentType)
+	file.SetContentType(fi.Type)
 	_, err = io.Copy(file, r)
 	if err != nil {
-		return
+		return fi, err
 	}
-	key = file.Id().(bson.ObjectId).Hex()
-	return
+	fi.Key = file.Id().(bson.ObjectId).Hex()
+	return fi, nil
 }
 
 func (s *mongoStore) Get(key string) (r io.Reader, err error) {
@@ -63,6 +65,7 @@ func (s *mongoStore) Get(key string) (r io.Reader, err error) {
 	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
 	// blobstore.Send(w, appengine.BlobKey(key))
 	id := bson.ObjectIdHex(key)
-	r, err = s.fs.OpenId(id)
-	return
+	file, err := s.fs.OpenId(id)
+	file.Name()
+	return file, nil
 }
