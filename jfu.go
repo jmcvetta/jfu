@@ -24,6 +24,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/jmcvetta/jfu/resize"
+	"image"
+	"image/png"
 	"io"
 	"log"
 	"mime/multipart"
@@ -31,9 +34,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"image"
-	"image/png"
-	"github.com/jmcvetta/jfu/resize"
 )
 
 const (
@@ -42,6 +42,7 @@ const (
 
 var (
 	defaultConfig = Config{
+		RootUrl:            "http://foobar.com",
 		MinFileSize:        1,
 		MaxFileSize:        2,
 		AcceptFileTypes:    IMAGE_TYPES,
@@ -54,6 +55,7 @@ var (
 
 // Config is used to configure an UploadHandler.
 type Config struct {
+	RootUrl            string // URL
 	MinFileSize        int    // bytes
 	MaxFileSize        int    // bytes
 	AcceptFileTypes    string // regular expression
@@ -63,8 +65,8 @@ type Config struct {
 }
 
 type DataStore interface {
-	Exists(string) (bool, error)                 // Check if a file exists for specified key
-	Create(*FileInfo, io.Reader) (string, error) // Create a new file and return its key
+	Exists(key string) (bool, error)
+	Create(filetype string, data io.Reader) (key string, err error)
 }
 
 // UploadHandler provides a functions to handle file upload and serve 
@@ -131,23 +133,27 @@ func (h *UploadHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 }
 
-/*
 func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
+	// 
+	// Seems kinda sloppy to be splitting the URL like this.  Would be nicer
+	// to use configurable regex or similar
+	//
 	if r.URL.Path == "/" {
-		http.Redirect(w, r, WEBSITE, http.StatusFound)
+		http.Redirect(w, r, h.conf.RootUrl, http.StatusFound)
 		return
 	}
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) == 3 {
 		if key := parts[1]; key != "" {
-			blobKey := appengine.BlobKey(key)
-			bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
-			if err == nil {
+			// blobKey := appengine.BlobKey(key)
+			// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
+			exists, err := h.store.Exists(key)
+			if exists && err == nil {
 				w.Header().Add(
 					"Cache-Control",
-					fmt.Sprintf("public,max-age=%d", EXPIRATION_TIME),
+					fmt.Sprintf("public,max-age=%d", h.conf.ExpirationTime),
 				)
-				if imageTypes.MatchString(bi.ContentType) {
+				if imageRegex.MatchString(bi.ContentType) {
 					w.Header().Add("X-Content-Type-Options", "nosniff")
 				} else {
 					w.Header().Add("Content-Type", "application/octet-stream")
@@ -161,9 +167,10 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	//
+	//
 	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
-*/
 
 func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi *FileInfo) {
 	fi = &FileInfo{
@@ -204,16 +211,15 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 		return
 	}
 	//
+	// Save to data store
 	//
-	// Use LimitedReader for safetey even tho we have already validated file size
-	// var lr io.Reader
-	//  lr = &io.LimitedReader{R: p, N: MAX_FILE_SIZE + 1} // Why is N = max + 1? EOF character?  Was that way in orig code. - JM 25 June 2012
-	// Copy buffer to feed to thumbnailer
-	//
-	key, err := h.store.Create(fi, &bSave)
+	key, err := h.store.Create(fi.Type, &bSave)
 	http500(w, err)
 	fi.Size = size
 	fi.Key = key
+	//
+	// Create thumbnail
+	//
 	if isImage && size > 0 {
 		_, err = h.CreateThumbnail(fi, &bThumb)
 		http500(w, err)
