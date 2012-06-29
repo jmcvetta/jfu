@@ -225,7 +225,11 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	// Save to data store
 	//
+<<<<<<< Updated upstream
 	err = h.store.Create(fi, &bSave)
+=======
+	fi, err := h.store.Create(fi &bSave)
+>>>>>>> Stashed changes
 	http500(w, err)
 	//
 	// Create thumbnail
