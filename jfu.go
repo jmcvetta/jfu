@@ -1,6 +1,6 @@
 /*
- * (c) 2012 Jason McVetta.  This is Free Software, released under the terms of
- * the GPL v3.  See http://www.gnu.org/copyleft/gpl.html for details.
+ * Copyright (c) 2012 Jason McVetta.  This is Free Software, released under the
+ * terms of the AGPL v3.  See www.gnu.org/licenses/agpl-3.0.html for details.
  * 
  *
  * Derived from: 
@@ -43,7 +43,7 @@ const (
 
 var (
 	defaultConfig = Config{
-		RootUrl:            "http://foobar.com",
+		Url:            "http://foobar.com",
 		MinFileSize:        1,
 		MaxFileSize:        2,
 		AcceptFileTypes:    IMAGE_TYPES,
@@ -67,9 +67,10 @@ type Config struct {
 }
 
 type DataStore interface {
+	ContentType(key string) (string, error)                 // Get content type of file specified by key
 	Exists(key string) (bool, error)                        // Check if a file exists for specified key
-	Create(contentType string, r io.Reader) (string, error) // Create a new file and return its key
-	Get(key string) (io.Reader, error)                      // Get the file blob associated with a key
+	Create(*FileInfo, io.Reader) error // Create a new file and return its key
+	Get(key string) (FileInfo, io.Reader, error)                      // Get the file blob associated with a key
 }
 
 // UploadHandler provides a functions to handle file upload and serve 
@@ -84,16 +85,22 @@ type UploadHandler struct {
 
 // FileInfo describes a file that has been uploaded.
 type FileInfo struct {
-	// Key          appengine.BlobKey `json:"-"`
 	Key          string `json:"-"`
 	Url          string `json:"url,omitempty"`
 	ThumbnailUrl string `json:"thumbnail_url,omitempty"`
 	Name         string `json:"name"`
 	Type         string `json:"type"`
-	Size         int    `json:"size"`
+	Size         int64    `json:"size"`
 	Error        string `json:"error,omitempty"`
 	DeleteUrl    string `json:"delete_url,omitempty"`
 	DeleteType   string `json:"delete_type,omitempty"`
+}
+
+// http404 Raises an HTTP 404 Not Found error on w
+func http404(w http.ResponseWriter) {
+	code := http.StatusNotFound
+	msg := http.StatusText(code)
+	http.Error(w, msg, code)
 }
 
 // http500 Raises an HTTP 500 Internal Server Error if err is non-nil
@@ -124,12 +131,15 @@ func (h *UploadHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		h.get(w, r)
 	case "POST":
 		if len(params["_method"]) > 0 && params["_method"][0] == "DELETE" {
-			h.delete(w, r)
+			// h.delete(w, r)
+			http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
 		} else {
-			h.post(w, r)
+			// h.post(w, r)
+			http.Error(w, "POST support not yet implmented", http.StatusNotImplemented)
 		}
 	case "DELETE":
-		h.delete(w, r)
+		// h.delete(w, r)
+		http.Error(w, "DELETE support not yet implmented", http.StatusNotImplemented)
 	default:
 		http.Error(w, "501 Not Implemented", http.StatusNotImplemented)
 	}
@@ -146,34 +156,32 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) == 3 {
-		if key := parts[1]; key != "" {
-			// blobKey := appengine.BlobKey(key)
-			// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
-			exists, err := h.store.Exists(key)
-			http500(w, err)
-			if exists {
-				w.Header().Add(
-					"Cache-Control",
-					fmt.Sprintf("public,max-age=%d", h.conf.ExpirationTime),
-				)
-				if imageRegex.MatchString(bi.ContentType) {
-					w.Header().Add("X-Content-Type-Options", "nosniff")
-				} else {
-					w.Header().Add("Content-Type", "application/octet-stream")
-					w.Header().Add(
-						"Content-Disposition:",
-						fmt.Sprintf("attachment; filename=%s;", parts[2]),
-					)
-				}
-				// blobstore.Send(w, appengine.BlobKey(key))
-				return
-			}
-		}
+	//
+	//
+	if len(parts) != 3 || parts[1] == "" {
+		http.Error(w, "Invalid URL", http.StatusNotFound)
 	}
+	fi, file, err := h.store.Get(parts[1])
+	if err == FileNotFoundError { http404(w) }
+	http500(w, err)
 	//
 	//
-	http.Error(w, "404 Not Found", http.StatusNotFound)
+	w.Header().Add(
+		"Cache-Control",
+		fmt.Sprintf("public,max-age=%d", h.conf.ExpirationTime),
+	)
+	if imageRegex.MatchString(fi.Type) {
+		w.Header().Add("X-Content-Type-Options", "nosniff")
+	} else {
+		w.Header().Add("Content-Type", "application/octet-stream")
+		w.Header().Add(
+			"Content-Disposition:",
+			fmt.Sprintf("attachment; filename=%s;", parts[2]),
+		)
+	}
+	// blobstore.Send(w, appengine.BlobKey(key))
+	io.Copy(w, file)
+	return
 }
 
 func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi *FileInfo) {
@@ -217,10 +225,8 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	// Save to data store
 	//
-	key, err := h.store.Create(fi.Type, &bSave)
+	err = h.store.Create(fi, &bSave)
 	http500(w, err)
-	fi.Size = size
-	fi.Key = key
 	//
 	// Create thumbnail
 	//
@@ -249,7 +255,8 @@ func (h *UploadHandler) post(w http.ResponseWriter, r *http.Request) {
 	r.Form, err = url.ParseQuery(r.URL.RawQuery)
 	http500(w, err)
 	for err == nil {
-		part, err := mr.NextPart()
+		var part *multipart.Part
+		part, err = mr.NextPart()
 		if name := part.FormName(); name != "" {
 			if part.FileName() != "" {
 				fileInfos = append(fileInfos, h.uploadFile(w, part))

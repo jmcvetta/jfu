@@ -1,7 +1,7 @@
 /*
- * (c) 2012 Jason McVetta.  This is Free Software, released under the terms of
- * the GPL v3.  See http://www.gnu.org/copyleft/gpl.html for details.
- * 
+ * Copyright (c) 2012 Jason McVetta.  This is Free Software, released under the
+ * terms of the AGPL v3.  See www.gnu.org/licenses/agpl-3.0.html for details.
+ *
  *
  * Derived from: 
  *
@@ -29,7 +29,7 @@ type mongoStore struct {
 }
 
 // Exists checks whether a blob identified by key exists in the data store
-func (s *mongoStore) Exists(key string) (result bool, err error) {
+func (s mongoStore) Exists(key string) (result bool, err error) {
 	// blobKey := appengine.BlobKey(key)
 	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
 	q := s.fs.Find(bson.M{"_id": key})
@@ -45,27 +45,58 @@ func (s *mongoStore) Exists(key string) (result bool, err error) {
 	return
 }
 
-func (s *mongoStore) Create(fi FileInfo, r io.Reader) (FileInfo, error) {
+// ContentType returns the content type for the saved file indicated by key, 
+// or returns a FileNotFoundError if no such file exists.
+func (s mongoStore) ContentType(key string) (ct string, err error) {
+	var file mgo.GridFile
+	q := s.fs.Find(bson.M{"_id": key})
+	err = q.One(&file)
+	switch {
+	case err == mgo.ErrNotFound:
+		return ct, FileNotFoundError
+	case err != nil:
+		return
+	}
+	return file.ContentType(), nil
+}
+
+func (s mongoStore) Create(fi *FileInfo, r io.Reader) error {
 	file, err := s.fs.Create(fi.Name)
 	if err != nil {
-		return fi, err
+		return err
 	}
 	defer file.Close()
 	file.SetContentType(fi.Type)
 	_, err = io.Copy(file, r)
 	if err != nil {
-		return fi, err
+		return err
 	}
 	fi.Key = file.Id().(bson.ObjectId).Hex()
-	return fi, nil
+	return nil
 }
 
-func (s *mongoStore) Get(key string) (r io.Reader, err error) {
+func (s mongoStore) Get(key string) (fi FileInfo, r io.Reader, err error) {
 	// blobKey := appengine.BlobKey(key)
 	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
 	// blobstore.Send(w, appengine.BlobKey(key))
 	id := bson.ObjectIdHex(key)
 	file, err := s.fs.OpenId(id)
-	file.Name()
-	return file, nil
+	fi = FileInfo{
+		Key: key,
+		// Url
+		// ThumbnailUrl
+		Name: file.Name(),
+		Type: file.ContentType(),
+		Size: file.Size(),
+		Error: err.Error(),
+		// DeleteUrl
+		// DeleteType
+	}
+	return fi, file, nil
+}
+
+
+func NewMongoStore(gfs *mgo.GridFS) DataStore {
+	ms := mongoStore{fs: gfs}
+	return ms
 }
