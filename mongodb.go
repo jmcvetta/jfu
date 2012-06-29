@@ -81,18 +81,25 @@ func (s mongoStore) Get(key string) (fi FileInfo, r io.Reader, err error) {
 	// blobstore.Send(w, appengine.BlobKey(key))
 	id := bson.ObjectIdHex(key)
 	file, err := s.fs.OpenId(id)
-	fi = FileInfo{
-		Key: key,
-		// Url
-		// ThumbnailUrl
-		Name: file.Name(),
-		Type: file.ContentType(),
-		Size: file.Size(),
-		Error: err.Error(),
-		// DeleteUrl
-		// DeleteType
+	if err != nil { 
+		fi = FileInfo{
+			Error: err.Error(),
+		}
+	} else {
+		fi = FileInfo{
+			Key: key,
+			// Url
+			// ThumbnailUrl
+			Name: file.Name(),
+			Type: file.ContentType(),
+			Size: file.Size(),
+			// Error
+			// DeleteUrl
+			// DeleteType
+		}
 	}
-	return fi, file, nil
+	r = file
+	return 
 }
 
 

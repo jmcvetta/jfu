@@ -12,11 +12,12 @@ import (
 	// "labix.org/v2/mgo/bson"
 	// "log"
 	"testing"
+	"io"
 )
 
 // Initialize a randomly-named testing database
 func InitMongo(t *testing.T) *mgo.Database {
-	randStr, err := randutil.AlphaString(64)
+	randStr, err := randutil.AlphaString(32)
 	if err != nil { t.Fatal(err) }
 	dbName := "testing_" + randStr
 	conn, err := mgo.Dial("localhost")
@@ -40,11 +41,12 @@ func TestRoundTrip(t *testing.T) {
 	fi := FileInfo{
 		Type: "text/plain",
 	}
-	err = ms.Create(fi, b)
+	err = ms.Create(&fi, b)
 	if err != nil {
 		t.Fatal(err)
 	}
-	key = fi.Key
+	key := fi.Key
+	t.Log("key:", key)
 	//
 	// Get
 	//
@@ -52,7 +54,12 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	retr := string(r)
+	rbuf := new(bytes.Buffer)
+	t.Log(err)
+	t.Log("********************************************************************************")
+	t.Log(r)
+	io.Copy(rbuf, r)
+	retr := rbuf.String()
 	if retr != data {
 		msg := "Different data retrieved than was saved!\n"
 		msg += "data: " + data + "\n"
