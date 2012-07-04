@@ -72,6 +72,7 @@ func (s mongoStore) Create(fi *FileInfo, r io.Reader) error {
 		return err
 	}
 	fi.Key = file.Id().(bson.ObjectId).Hex()
+	fi.Size = file.Size()
 	return nil
 }
 
