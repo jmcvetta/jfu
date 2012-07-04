@@ -28,8 +28,8 @@ func main() {
 	uh := jfu.UploadHandler{
 		Store: store,
 	}
-	log.Println(uh)
 	//
+	http.HandleFunc("/jfu", uh.HandlerFunc())
 	http.Handle("/", http.FileServer(http.Dir(path)))
 	log.Println("Starting webserver on " + url + "...")
 	http.ListenAndServe(url, nil)
