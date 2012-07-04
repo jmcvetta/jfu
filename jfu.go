@@ -58,7 +58,7 @@ var (
 type Config struct {
 	MinFileSize        int    // bytes
 	MaxFileSize        int    // bytes
-	AcceptFileTypes    string // regular expression // TODO: Change this to a Regexp object
+	AcceptFileTypes    string // TODO: Change this to a Regexp object
 	ExpirationTime     int    // seconds
 	ThumbnailMaxWidth  int    // pixels
 	ThumbnailMaxHeight int    // pixels
@@ -72,11 +72,9 @@ type DataStore interface {
 // UploadHandler provides a functions to handle file upload and serve 
 // thumbnails.
 type UploadHandler struct {
-	// HandleUpload(http.ResponseWriter, *http.Request)
-	// ServeThumbnail(http.ResponseWriter, *http.Request)
-	Conf  *Config
-	Store *DataStore
-	Cache *memcache.Client // Memcache client (optional)
+	Conf  *Config          // Configuration
+	Store *DataStore       // Persistant storage for files
+	Cache *memcache.Client // Cache for image thumbnails
 }
 
 // FileInfo describes a file that has been uploaded.
@@ -199,11 +197,11 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	}
 	isImage := imageRegex.MatchString(fi.Type)
 	//
-	// Validate file size
-	// 
-	var lr io.Reader
-	// Max + 1 so we can see if file goes over limit
-	lr = &io.LimitedReader{R: p, N: int64(h.Conf.MaxFileSize + 1)}
+	// Copy into buffers for save and thumbnail generation
+	//
+	// Max + 1 for LimitedReader size, so we can detect below if file size is 
+	// greater than max.
+	lr := &io.LimitedReader{R: p, N: int64(h.Conf.MaxFileSize)}
 	var bSave bytes.Buffer  // Buffer to be saved
 	var bThumb bytes.Buffer // Buffer to be thumbnailed
 	var wr io.Writer
@@ -214,6 +212,9 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	}
 	_, err := io.Copy(wr, lr)
 	http500(w, err)
+	//
+	// Validate file size
+	// 
 	size := bSave.Len()
 	if size < h.Conf.MinFileSize {
 		log.Println("File failed validation: too small.", size, h.Conf.MinFileSize)
@@ -235,7 +236,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	if isImage && size > 0 {
 		_, err = h.CreateThumbnail(fi, &bThumb)
-		http500(w, err)
+		log.Println("Error creating thumbnail:", err)
 		// If we wanted to save thumbnails to peristent storage, this would be 
 		// a good spot to do it.
 	}
@@ -400,14 +401,16 @@ func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte,
 			data, _ = base64.StdEncoding.DecodeString(s)
 			fi.ThumbnailUrl = "data:image/gif;base64," + s
 		}
-		h.Cache.Add(&memcache.Item{
+		item := memcache.Item{
 			Key:        string(fi.Key),
 			Value:      data,
 			Expiration: int32(h.Conf.ExpirationTime),
-		})
+		}
+		h.Cache.Add(&item)
 	}()
 	img, _, err := image.Decode(r)
 	if err != nil {
+		log.Println("Could not decode image.", fi)
 		return
 	}
 	if bounds := img.Bounds(); bounds.Dx() > h.Conf.ThumbnailMaxWidth ||
@@ -423,6 +426,7 @@ func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte,
 	var b bytes.Buffer
 	err = png.Encode(&b, img)
 	if err != nil {
+		log.Println("Could not encode thumbnail.", fi)
 		return
 	}
 	data = b.Bytes()
