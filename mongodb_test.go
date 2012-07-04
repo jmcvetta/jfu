@@ -2,7 +2,7 @@
  * Copyright (c) 2012 Jason McVetta.  This is Free Software, released under the
  * terms of the AGPL v3.  See www.gnu.org/licenses/agpl-3.0.html for details.
  */
- 
+
 package jfu
 
 import (
@@ -11,17 +11,21 @@ import (
 	"labix.org/v2/mgo"
 	// "labix.org/v2/mgo/bson"
 	// "log"
-	"testing"
 	"io"
+	"testing"
 )
 
 // Initialize a randomly-named testing database
 func InitMongo(t *testing.T) *mgo.Database {
 	randStr, err := randutil.AlphaString(32)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	dbName := "testing_" + randStr
 	conn, err := mgo.Dial("localhost")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	return conn.DB(dbName)
 }
 
@@ -32,7 +36,9 @@ func TestRoundTrip(t *testing.T) {
 	db := InitMongo(t)
 	defer db.DropDatabase()
 	data, err := randutil.AlphaString(512)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	ms := mongoStore{fs: db.GridFS("")}
 	//
 	// Create

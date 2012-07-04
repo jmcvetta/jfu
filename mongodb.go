@@ -81,7 +81,7 @@ func (s mongoStore) Get(key string) (fi FileInfo, r io.Reader, err error) {
 	// blobstore.Send(w, appengine.BlobKey(key))
 	id := bson.ObjectIdHex(key)
 	file, err := s.fs.OpenId(id)
-	if err != nil { 
+	if err != nil {
 		fi = FileInfo{
 			Error: err.Error(),
 		}
@@ -99,9 +99,8 @@ func (s mongoStore) Get(key string) (fi FileInfo, r io.Reader, err error) {
 		}
 	}
 	r = file
-	return 
+	return
 }
-
 
 func NewMongoStore(gfs *mgo.GridFS) DataStore {
 	ms := mongoStore{fs: gfs}
