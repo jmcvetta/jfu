@@ -79,7 +79,7 @@ type UploadHandler struct {
 	// HandleUpload(http.ResponseWriter, *http.Request)
 	// ServeThumbnail(http.ResponseWriter, *http.Request)
 	Conf  *Config
-	Store DataStore
+	Store *DataStore
 	Cache *memcache.Client // Memcache client (optional)
 }
 
@@ -160,7 +160,7 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	if len(parts) != 3 || parts[1] == "" {
 		http.Error(w, "Invalid URL", http.StatusNotFound)
 	}
-	fi, file, err := h.Store.Get(parts[1])
+	fi, file, err := (*h.Store).Get(parts[1])
 	if err == FileNotFoundError {
 		http404(w)
 	}
@@ -226,7 +226,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	// Save to data store
 	//
-	err = h.Store.Create(fi, &bSave)
+	err = (*h.Store).Create(fi, &bSave)
 	http500(w, err)
 	//
 	// Create thumbnail
