@@ -115,35 +115,33 @@ func escape(s string) string {
 	return strings.Replace(url.QueryEscape(s), "+", "%20", -1)
 }
 
-func (h *UploadHandler) HandlerFunc() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		params, err := url.ParseQuery(r.URL.RawQuery)
-		http500(w, err)
-		w.Header().Add("Access-Control-Allow-Origin", "*")
-		w.Header().Add(
-			"Access-Control-Allow-Methods",
-			// "OPTIONS, HEAD, GET, POST, PUT, DELETE",
-			"GET, POST, PUT, DELETE",
-		)
-		switch r.Method {
-		// case "OPTIONS":
-		// case "HEAD":
-		case "GET":
-			h.get(w, r)
-		case "POST":
-			if len(params["_method"]) > 0 && params["_method"][0] == "DELETE" {
-				// h.delete(w, r)
-				http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
-			} else {
-				h.post(w, r)
-				// http.Error(w, "POST support not yet implmented", http.StatusNotImplemented)
-			}
-		case "DELETE":
+func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	params, err := url.ParseQuery(r.URL.RawQuery)
+	http500(w, err)
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add(
+		"Access-Control-Allow-Methods",
+		// "OPTIONS, HEAD, GET, POST, PUT, DELETE",
+		"GET, POST, PUT, DELETE",
+	)
+	switch r.Method {
+	// case "OPTIONS":
+	// case "HEAD":
+	case "GET":
+		h.get(w, r)
+	case "POST":
+		if len(params["_method"]) > 0 && params["_method"][0] == "DELETE" {
 			// h.delete(w, r)
-			http.Error(w, "DELETE support not yet implmented", http.StatusNotImplemented)
-		default:
-			http.Error(w, "501 Not Implemented", http.StatusNotImplemented)
+			http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
+		} else {
+			h.post(w, r)
+			// http.Error(w, "POST support not yet implmented", http.StatusNotImplemented)
 		}
+	case "DELETE":
+		// h.delete(w, r)
+		http.Error(w, "DELETE support not yet implmented", http.StatusNotImplemented)
+	default:
+		http.Error(w, "501 Not Implemented", http.StatusNotImplemented)
 	}
 }
 
