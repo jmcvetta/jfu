@@ -32,7 +32,7 @@ $(function () {
         // Demo settings:
         $('#fileupload').fileupload('option', {
             // url: '//jquery-file-upload.appspot.com/',
-            url: '//localhost:5000/jfu/,
+            url: '//localhost:5000/jfu/',
             maxFileSize: 5000000,
             acceptFileTypes: /(\.|\/)(gif|jpe?g|png)$/i,
             process: [
@@ -55,7 +55,7 @@ $(function () {
         if ($.support.cors) {
             $.ajax({
                 // url: '//jquery-file-upload.appspot.com/',
-                url: '//localhost:5000/jfu/,
+				url: '//localhost:5000/jfu/',
                 type: 'HEAD'
             }).fail(function () {
                 $('<span class="alert alert-error"/>')
