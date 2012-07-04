@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/jmcvetta/jfu"
 	"labix.org/v2/mgo"
 	"log"
@@ -25,9 +26,13 @@ func main() {
 	db := conn.DB("test_foobar")
 	gfs := db.GridFS("test_foobar")
 	store := jfu.NewMongoStore(gfs)
+	//
+	client := memcache.New("localhost")
+	//
 	uh := jfu.UploadHandler{
 		Store: &store,
 		Conf:  &jfu.DefaultConfig,
+		Cache: client,
 	}
 	//
 	http.Handle("/jfu", http.StripPrefix("/jfu", &uh))
