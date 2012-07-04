@@ -43,7 +43,7 @@ const (
 
 var (
 	defaultConfig = Config{
-		Url:            "http://foobar.com",
+		Url:                "http://foobar.com",
 		MinFileSize:        1,
 		MaxFileSize:        2,
 		AcceptFileTypes:    IMAGE_TYPES,
@@ -67,10 +67,10 @@ type Config struct {
 }
 
 type DataStore interface {
-	ContentType(key string) (string, error)                 // Get content type of file specified by key
-	Exists(key string) (bool, error)                        // Check if a file exists for specified key
-	Create(*FileInfo, io.Reader) error // Create a new file and return its key
-	Get(key string) (FileInfo, io.Reader, error)                      // Get the file blob associated with a key
+	ContentType(key string) (string, error)      // Get content type of file specified by key
+	Exists(key string) (bool, error)             // Check if a file exists for specified key
+	Create(*FileInfo, io.Reader) error           // Create a new file and return its key
+	Get(key string) (FileInfo, io.Reader, error) // Get the file blob associated with a key
 }
 
 // UploadHandler provides a functions to handle file upload and serve 
@@ -78,9 +78,9 @@ type DataStore interface {
 type UploadHandler struct {
 	// HandleUpload(http.ResponseWriter, *http.Request)
 	// ServeThumbnail(http.ResponseWriter, *http.Request)
-	conf  *Config
-	store DataStore
-	cache *memcache.Client // Memcache client (optional)
+	Conf  *Config
+	Store DataStore
+	Cache *memcache.Client // Memcache client (optional)
 }
 
 // FileInfo describes a file that has been uploaded.
@@ -90,7 +90,7 @@ type FileInfo struct {
 	ThumbnailUrl string `json:"thumbnail_url,omitempty"`
 	Name         string `json:"name"`
 	Type         string `json:"type"`
-	Size         int64    `json:"size"`
+	Size         int64  `json:"size"`
 	Error        string `json:"error,omitempty"`
 	DeleteUrl    string `json:"delete_url,omitempty"`
 	DeleteType   string `json:"delete_type,omitempty"`
@@ -134,8 +134,8 @@ func (h *UploadHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			// h.delete(w, r)
 			http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
 		} else {
-			// h.post(w, r)
-			http.Error(w, "POST support not yet implmented", http.StatusNotImplemented)
+			h.post(w, r)
+			// http.Error(w, "POST support not yet implmented", http.StatusNotImplemented)
 		}
 	case "DELETE":
 		// h.delete(w, r)
@@ -152,7 +152,7 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	// to use configurable regex or similar
 	//
 	if r.URL.Path == "/" {
-		http.Redirect(w, r, h.conf.Url, http.StatusFound)
+		http.Redirect(w, r, h.Conf.Url, http.StatusFound)
 		return
 	}
 	parts := strings.Split(r.URL.Path, "/")
@@ -161,14 +161,16 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	if len(parts) != 3 || parts[1] == "" {
 		http.Error(w, "Invalid URL", http.StatusNotFound)
 	}
-	fi, file, err := h.store.Get(parts[1])
-	if err == FileNotFoundError { http404(w) }
+	fi, file, err := h.Store.Get(parts[1])
+	if err == FileNotFoundError {
+		http404(w)
+	}
 	http500(w, err)
 	//
 	//
 	w.Header().Add(
 		"Cache-Control",
-		fmt.Sprintf("public,max-age=%d", h.conf.ExpirationTime),
+		fmt.Sprintf("public,max-age=%d", h.Conf.ExpirationTime),
 	)
 	if imageRegex.MatchString(fi.Type) {
 		w.Header().Add("X-Content-Type-Options", "nosniff")
@@ -192,7 +194,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	// Validate file type
 	//
-	re := regexp.MustCompile(h.conf.AcceptFileTypes) // It's inefficient to recompile the regex every time.  
+	re := regexp.MustCompile(h.Conf.AcceptFileTypes) // It's inefficient to recompile the regex every time.  
 	if re.MatchString(fi.Type) == false {
 		fi.Error = "acceptFileTypes"
 		return
@@ -203,7 +205,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	// 
 	var lr io.Reader
 	// Max + 1 so we can see if file goes over limit
-	lr = &io.LimitedReader{R: p, N: int64(h.conf.MaxFileSize + 1)}
+	lr = &io.LimitedReader{R: p, N: int64(h.Conf.MaxFileSize + 1)}
 	var bSave bytes.Buffer  // Buffer to be saved
 	var bThumb bytes.Buffer // Buffer to be thumbnailed
 	var wr io.Writer
@@ -215,17 +217,17 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	_, err := io.Copy(wr, lr)
 	http500(w, err)
 	size := bSave.Len()
-	if size < h.conf.MinFileSize {
+	if size < h.Conf.MinFileSize {
 		fi.Error = "minFileSize"
 		return
-	} else if size > h.conf.MaxFileSize {
+	} else if size > h.Conf.MaxFileSize {
 		fi.Error = "maxFileSize"
 		return
 	}
 	//
 	// Save to data store
 	//
-	err = h.store.Create(fi, &bSave)
+	err = h.Store.Create(fi, &bSave)
 	http500(w, err)
 	//
 	// Create thumbnail
@@ -397,19 +399,19 @@ func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte,
 			data, _ = base64.StdEncoding.DecodeString(s)
 			fi.ThumbnailUrl = "data:image/gif;base64," + s
 		}
-		h.cache.Add(&memcache.Item{
+		h.Cache.Add(&memcache.Item{
 			Key:        string(fi.Key),
 			Value:      data,
-			Expiration: int32(h.conf.ExpirationTime),
+			Expiration: int32(h.Conf.ExpirationTime),
 		})
 	}()
 	img, _, err := image.Decode(r)
 	if err != nil {
 		return
 	}
-	if bounds := img.Bounds(); bounds.Dx() > h.conf.ThumbnailMaxWidth ||
-		bounds.Dy() > h.conf.ThumbnailMaxHeight {
-		w, h := h.conf.ThumbnailMaxWidth, h.conf.ThumbnailMaxHeight
+	if bounds := img.Bounds(); bounds.Dx() > h.Conf.ThumbnailMaxWidth ||
+		bounds.Dy() > h.Conf.ThumbnailMaxHeight {
+		w, h := h.Conf.ThumbnailMaxWidth, h.Conf.ThumbnailMaxHeight
 		if bounds.Dx() > bounds.Dy() {
 			h = bounds.Dy() * h / bounds.Dx()
 		} else {
