@@ -26,10 +26,11 @@ func main() {
 	gfs := db.GridFS("test_foobar")
 	store := jfu.NewMongoStore(gfs)
 	uh := jfu.UploadHandler{
-		Store: store,
+		Store: &store,
+		Conf:  &jfu.DefaultConfig,
 	}
 	//
-	http.HandleFunc("/jfu", uh.HandlerFunc())
+	http.Handle("/jfu", http.StripPrefix("/jfu", &uh))
 	http.Handle("/", http.FileServer(http.Dir(path)))
 	log.Println("Starting webserver on " + url + "...")
 	http.ListenAndServe(url, nil)
