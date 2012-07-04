@@ -42,10 +42,9 @@ const (
 )
 
 var (
-	defaultConfig = Config{
-		Url:                "http://foobar.com",
-		MinFileSize:        1,
-		MaxFileSize:        2,
+	DefaultConfig = Config{
+		MinFileSize:        1,       // bytes
+		MaxFileSize:        5000000, // bytes
 		AcceptFileTypes:    IMAGE_TYPES,
 		ExpirationTime:     300,
 		ThumbnailMaxWidth:  80,
@@ -57,18 +56,15 @@ var (
 
 // Config is used to configure an UploadHandler.
 type Config struct {
-	Url                string // Redirect here if called without arguments
 	MinFileSize        int    // bytes
 	MaxFileSize        int    // bytes
-	AcceptFileTypes    string // regular expression
+	AcceptFileTypes    string // regular expression // TODO: Change this to a Regexp object
 	ExpirationTime     int    // seconds
 	ThumbnailMaxWidth  int    // pixels
 	ThumbnailMaxHeight int    // pixels
 }
 
 type DataStore interface {
-	ContentType(key string) (string, error)      // Get content type of file specified by key
-	Exists(key string) (bool, error)             // Check if a file exists for specified key
 	Create(*FileInfo, io.Reader) error           // Create a new file and return its key
 	Get(key string) (FileInfo, io.Reader, error) // Get the file blob associated with a key
 }
@@ -96,18 +92,12 @@ type FileInfo struct {
 	DeleteType   string `json:"delete_type,omitempty"`
 }
 
-// http404 Raises an HTTP 404 Not Found error on w
-func http404(w http.ResponseWriter) {
-	code := http.StatusNotFound
-	msg := http.StatusText(code)
-	http.Error(w, msg, code)
-}
-
 // http500 Raises an HTTP 500 Internal Server Error if err is non-nil
 func http500(w http.ResponseWriter, err error) {
 	if err != nil {
 		msg := "500 Internal Server Error: " + err.Error()
 		http.Error(w, msg, http.StatusInternalServerError)
+		log.Panic(err)
 	}
 }
 
@@ -158,13 +148,22 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	//
 	//
 	if len(parts) != 3 || parts[1] == "" {
-		http.Error(w, "Invalid URL", http.StatusNotFound)
+		log.Println("Invalid URL:", r.URL)
+		http.Error(w, "404 Invalid URL", http.StatusNotFound)
+		return
 	}
+	key := parts[1]
+	log.Println("Get", key)
 	fi, file, err := (*h.Store).Get(parts[1])
 	if err == FileNotFoundError {
-		http404(w)
+		log.Println("Not Found", key)
+		code := http.StatusNotFound
+		msg := http.StatusText(code)
+		http.Error(w, msg, code)
+		return
 	}
 	http500(w, err)
+	log.Println("Found", key, fi.Type)
 	//
 	//
 	w.Header().Add(
@@ -217,9 +216,11 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	http500(w, err)
 	size := bSave.Len()
 	if size < h.Conf.MinFileSize {
+		log.Println("File failed validation: too small.", size, h.Conf.MinFileSize)
 		fi.Error = "minFileSize"
 		return
 	} else if size > h.Conf.MaxFileSize {
+		log.Println("File failed validation: too large.", size, h.Conf.MaxFileSize)
 		fi.Error = "maxFileSize"
 		return
 	}
@@ -228,6 +229,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	err = (*h.Store).Create(fi, &bSave)
 	http500(w, err)
+	log.Println("Create", size)
 	//
 	// Create thumbnail
 	//
@@ -255,9 +257,13 @@ func (h *UploadHandler) post(w http.ResponseWriter, r *http.Request) {
 	http500(w, err)
 	r.Form, err = url.ParseQuery(r.URL.RawQuery)
 	http500(w, err)
-	for err == nil {
-		var part *multipart.Part
-		part, err = mr.NextPart()
+	for {
+		// var part *multipart.Part
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		http500(w, err)
 		if name := part.FormName(); name != "" {
 			if part.FileName() != "" {
 				fileInfos = append(fileInfos, h.uploadFile(w, part))
@@ -265,10 +271,6 @@ func (h *UploadHandler) post(w http.ResponseWriter, r *http.Request) {
 				r.Form[name] = append(r.Form[name], getFormValue(part))
 			}
 		}
-	}
-	// We expect an EOF error; whig out on anything else
-	if err != io.EOF {
-		http500(w, err)
 	}
 	js, err := json.Marshal(fileInfos)
 	http500(w, err)
