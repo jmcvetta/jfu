@@ -190,7 +190,6 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 
 // uploadFile handles the upload of a single file from a multipart form.  
 func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi *FileInfo) {
-	log.Println("CAPTION", p.Header.Get("caption"))
 	fi = &FileInfo{
 		Name: p.FileName(),
 		Type: p.Header.Get("Content-Type"),
