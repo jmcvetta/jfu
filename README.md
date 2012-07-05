@@ -2,8 +2,6 @@
 
 [Golang](http://golang.org) backend for the [jQuery File Upload](http://blueimp.github.com/jQuery-File-Upload/) plugin.
 
-Derived from the Go GAE server example included with the plugin.
-
 # Note
 
 jfu isn't quite ready yet.  Please don't try to use it for anything, as it will probably not work.
@@ -11,4 +9,7 @@ jfu isn't quite ready yet.  Please don't try to use it for anything, as it will 
 
 # License
 
-Released under the [GPL v3](http://www.gnu.org/copyleft/gpl.html).
+Released under the [AGPL v3](http://www.gnu.org/licenses/agpl-3.0.html).
+
+Derived from Sebastian Tschan's MIT-licensed example code, included with the
+jQuery File Upload plugin, for a Google AppEngine-based Go backend.
