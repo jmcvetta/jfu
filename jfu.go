@@ -72,9 +72,10 @@ type DataStore interface {
 // UploadHandler provides a functions to handle file upload and serve 
 // thumbnails.
 type UploadHandler struct {
-	Conf  *Config          // Configuration
-	Store *DataStore       // Persistant storage for files
-	Cache *memcache.Client // Cache for image thumbnails
+	Prefix string           // URL prefix to serve
+	Conf   *Config          // Configuration
+	Store  *DataStore       // Persistant storage for files
+	Cache  *memcache.Client // Cache for image thumbnails
 }
 
 // FileInfo describes a file that has been uploaded.
@@ -104,6 +105,15 @@ func escape(s string) string {
 }
 
 func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Println("URL:", r.URL)
+	// Remove h.Prefix from the URL path - based on http.StripPrefix()
+	if !strings.HasPrefix(r.URL.Path, h.Prefix) {
+		http.NotFound(w, r)
+		return
+	}
+	r.URL.Path = r.URL.Path[len(h.Prefix):]
+	log.Println("URL minus prefix:", r.URL)
+	log.Println("r", r)
 	params, err := url.ParseQuery(r.URL.RawQuery)
 	http500(w, err)
 	w.Header().Add("Access-Control-Allow-Origin", "*")
@@ -123,7 +133,6 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
 		} else {
 			h.post(w, r)
-			// http.Error(w, "POST support not yet implmented", http.StatusNotImplemented)
 		}
 	case "DELETE":
 		// h.delete(w, r)
@@ -134,15 +143,11 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
-	// 
-	// Seems kinda sloppy to be splitting the URL like this.  Would be nicer
-	// to use configurable regex or similar
-	//
-	// if r.URL.Path == "/" {
-	// http.Redirect(w, r, h.Conf.Url, http.StatusFound)
-	// return
-	// }
 	parts := strings.Split(r.URL.Path, "/")
+	if parts[1] == "thumbnails" {
+		h.serveThumbnails(w, r)
+		return
+	}
 	//
 	//
 	if len(parts) != 3 || parts[1] == "" {
@@ -155,9 +160,7 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	fi, file, err := (*h.Store).Get(parts[1])
 	if err == FileNotFoundError {
 		log.Println("Not Found", key)
-		code := http.StatusNotFound
-		msg := http.StatusText(code)
-		http.Error(w, msg, code)
+		http.NotFound(w, r)
 		return
 	}
 	http500(w, err)
@@ -177,11 +180,11 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("attachment; filename=%s;", parts[2]),
 		)
 	}
-	// blobstore.Send(w, appengine.BlobKey(key))
 	io.Copy(w, file)
 	return
 }
 
+// uploadFile handles the upload of a single file from a multipart form.  
 func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi *FileInfo) {
 	fi = &FileInfo{
 		Name: p.FileName(),
@@ -235,9 +238,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	// Set URLs in FileInfo
 	//
 	u := &url.URL{
-		// Scheme: r.URL.Scheme,
-		// No host so we have a relative url
-		Path:   "/",
+		Path: h.Prefix + "/",
 	}
 	uString := u.String()
 	fi.Url = uString + escape(string(fi.Key)) + "/" +
@@ -250,7 +251,9 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	if isImage && size > 0 {
 		_, err = h.CreateThumbnail(fi, &bThumb)
-		log.Println("Error creating thumbnail:", err)
+		if err != nil {
+			log.Println("Error creating thumbnail:", err)
+		}
 		// If we wanted to save thumbnails to peristent storage, this would be 
 		// a good spot to do it.
 	}
@@ -306,6 +309,7 @@ func (h *UploadHandler) post(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(js))
 }
 
+
 /*
 func (h *UploadHandler) delete(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
@@ -318,30 +322,25 @@ func (h *UploadHandler) delete(w http.ResponseWriter, r *http.Request) {
 		memcache.Delete(c, key)
 	}
 }
+*/
 
-func serveThumbnail(w http.ResponseWriter, r *http.Request) {
+func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) == 3 {
 		if key := parts[2]; key != "" {
 			var data []byte
-			c := appengine.NewContext(r)
-			item, err := memcache.Get(c, key)
+			item, err := h.Cache.Get(key)
 			if err == nil {
 				data = item.Value
 			} else {
-				blobKey := appengine.BlobKey(key)
-				if _, err = blobstore.Stat(c, blobKey); err == nil {
-					fi := FileInfo{Key: blobKey}
-					data, _ = fi.CreateThumbnail(
-						blobstore.NewReader(c, blobKey),
-						c,
-					)
+				if  fi, r, err := (*h.Store).Get(key); err == nil {
+					_, err = h.CreateThumbnail(&fi, r)
 				}
 			}
 			if err == nil && len(data) > 3 {
 				w.Header().Add(
 					"Cache-Control",
-					fmt.Sprintf("public,max-age=%d", EXPIRATION_TIME),
+					fmt.Sprintf("public,max-age=%d", h.Conf.ExpirationTime),
 				)
 				contentType := "image/png"
 				if string(data[:3]) == "GIF" {
@@ -358,33 +357,7 @@ func serveThumbnail(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
 
-func handle(w http.ResponseWriter, r *http.Request) {
-	params, err := url.ParseQuery(r.URL.RawQuery)
-	check(err)
-	w.Header().Add("Access-Control-Allow-Origin", "*")
-	w.Header().Add(
-		"Access-Control-Allow-Methods",
-		"OPTIONS, HEAD, GET, POST, PUT, DELETE",
-	)
-	switch r.Method {
-	case "OPTIONS":
-	case "HEAD":
-	case "GET":
-		get(w, r)
-	case "POST":
-		if len(params["_method"]) > 0 && params["_method"][0] == "DELETE" {
-			delete(w, r)
-		} else {
-			post(w, r)
-		}
-	case "DELETE":
-		delete(w, r)
-	default:
-		http.Error(w, "501 Not Implemented", http.StatusNotImplemented)
-	}
-}
 
-*/
 
 // CreateThumbnail generates a thumbnail and adds it to the cache.
 func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte, err error) {
@@ -405,8 +378,7 @@ func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte,
 	}()
 	img, _, err := image.Decode(r)
 	if err != nil {
-		log.Println("Could not decode image.", fi)
-		return
+		panic(err)
 	}
 	if bounds := img.Bounds(); bounds.Dx() > h.Conf.ThumbnailMaxWidth ||
 		bounds.Dy() > h.Conf.ThumbnailMaxHeight {
@@ -421,8 +393,7 @@ func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte,
 	var b bytes.Buffer
 	err = png.Encode(&b, img)
 	if err != nil {
-		log.Println("Could not encode thumbnail.", fi)
-		return
+		panic(err)
 	}
 	data = b.Bytes()
 	fi.ThumbnailUrl = "data:image/png;base64," +
