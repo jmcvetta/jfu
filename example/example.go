@@ -1,7 +1,8 @@
 package main
 
 import (
-	"github.com/bradfitz/gomemcache/memcache"
+	// "github.com/bradfitz/gomemcache/memcache"
+	"github.com/bmizerany/mc"
 	"github.com/jmcvetta/jfu"
 	"labix.org/v2/mgo"
 	"log"
@@ -27,7 +28,11 @@ func main() {
 	gfs := db.GridFS("test_foobar")
 	store := jfu.NewMongoStore(gfs)
 	//
-	client := memcache.New("localhost")
+	//client := memcache.New("localhost")
+	client, err := mc.Dial("tcp", "localhost:11211")
+	if err != nil {
+		log.Panic(err)
+	}
 	//
 	uh := jfu.UploadHandler{
 		Prefix: "/jfu",

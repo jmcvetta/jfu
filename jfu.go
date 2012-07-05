@@ -24,7 +24,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bradfitz/gomemcache/memcache"
+//	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/bmizerany/mc"
 	"github.com/jmcvetta/jfu/resize"
 	"image"
 	"image/png"
@@ -80,7 +81,8 @@ type UploadHandler struct {
 	Prefix string           // URL prefix to serve
 	Conf   *Config          // Configuration
 	Store  *DataStore       // Persistant storage for files
-	Cache  *memcache.Client // Cache for image thumbnails
+	// Cache  *memcache.Client // Cache for image thumbnails
+	Cache *mc.Conn // Cache for image thumbnails
 }
 
 // FileInfo describes a file that has been uploaded.
@@ -331,9 +333,10 @@ func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) 
 	if len(parts) == 3 {
 		if key := parts[2]; key != "" {
 			var data []byte
-			item, err := h.Cache.Get(key)
+			// item, err := h.Cache.Get(key)
+			val, _, _, err := h.Cache.Get(key)
 			if err == nil {
-				data = item.Value
+				data = []byte(val)
 			} else {
 				if fi, r, err := (*h.Store).Get(key); err == nil {
 					_, err = h.CreateThumbnail(&fi, r)
@@ -369,12 +372,13 @@ func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte,
 			data, _ = base64.StdEncoding.DecodeString(s)
 			fi.ThumbnailUrl = "data:image/gif;base64," + s
 		}
-		item := memcache.Item{
-			Key:        string(fi.Key),
-			Value:      data,
-			Expiration: int32(h.Conf.ExpirationTime),
-		}
-		h.Cache.Add(&item)
+		// item := memcache.Item{
+			// Key:        string(fi.Key),
+			// Value:      data,
+			// Expiration: int32(h.Conf.ExpirationTime),
+		// }
+		// h.Cache.Add(&item)
+		h.Cache.Set(fi.Key, string(data), 0, 0, h.Conf.ExpirationTime)
 	}()
 	img, _, err := image.Decode(r)
 	if err != nil {
