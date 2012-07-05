@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-//	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/bmizerany/mc"
 	"github.com/jmcvetta/jfu/resize"
 	"image"
@@ -78,10 +77,9 @@ type DataStore interface {
 // UploadHandler provides a functions to handle file upload and serve 
 // thumbnails.
 type UploadHandler struct {
-	Prefix string           // URL prefix to serve
-	Conf   *Config          // Configuration
-	Store  *DataStore       // Persistant storage for files
-	// Cache  *memcache.Client // Cache for image thumbnails
+	Prefix string     // URL prefix to serve
+	Conf   *Config    // Configuration
+	Store  *DataStore // Persistant storage for files
 	Cache *mc.Conn // Cache for image thumbnails
 }
 
@@ -208,7 +206,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	// Max + 1 for LimitedReader size, so we can detect below if file size is 
 	// greater than max.
-	lr := &io.LimitedReader{R: p, N: int64(h.Conf.MaxFileSize)}
+	lr := &io.LimitedReader{R: p, N: int64(h.Conf.MaxFileSize + 1)}
 	var bSave bytes.Buffer  // Buffer to be saved
 	var bThumb bytes.Buffer // Buffer to be thumbnailed
 	var wr io.Writer
@@ -332,7 +330,6 @@ func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) 
 	if len(parts) == 3 {
 		if key := parts[2]; key != "" {
 			var data []byte
-			// item, err := h.Cache.Get(key)
 			val, _, _, err := h.Cache.Get(key)
 			if err == nil {
 				data = []byte(val)
@@ -371,12 +368,6 @@ func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte,
 			data, _ = base64.StdEncoding.DecodeString(s)
 			fi.ThumbnailUrl = "data:image/gif;base64," + s
 		}
-		// item := memcache.Item{
-			// Key:        string(fi.Key),
-			// Value:      data,
-			// Expiration: int32(h.Conf.ExpirationTime),
-		// }
-		// h.Cache.Add(&item)
 		h.Cache.Set(fi.Key, string(data), 0, 0, h.Conf.ExpirationTime)
 	}()
 	img, _, err := image.Decode(r)
