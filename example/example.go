@@ -30,12 +30,14 @@ func main() {
 	client := memcache.New("localhost")
 	//
 	uh := jfu.UploadHandler{
-		Store: &store,
-		Conf:  &jfu.DefaultConfig,
-		Cache: client,
+		Prefix: "/jfu",
+		Store:  &store,
+		Conf:   &jfu.DefaultConfig,
+		Cache:  client,
 	}
 	//
-	http.Handle("/jfu", http.StripPrefix("/jfu", &uh))
+	http.Handle("/jfu", &uh)
+	http.Handle("/jfu/", &uh)
 	http.Handle("/", http.FileServer(http.Dir(path)))
 	log.Println("Starting webserver on " + url + "...")
 	http.ListenAndServe(url, nil)
