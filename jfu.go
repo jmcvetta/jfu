@@ -35,6 +35,10 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	// Register image handling libraries by importing them.
+	_ "image/png"
+	_ "image/jpeg"
+	_ "image/gif"
 )
 
 const (
@@ -112,8 +116,6 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.URL.Path = r.URL.Path[len(h.Prefix):]
-	log.Println("URL minus prefix:", r.URL)
-	log.Println("r", r)
 	params, err := url.ParseQuery(r.URL.RawQuery)
 	http500(w, err)
 	w.Header().Add("Access-Control-Allow-Origin", "*")
@@ -144,7 +146,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
-	if parts[1] == "thumbnails" {
+	if len(parts) >= 2 && parts[1] == "thumbnails" {
 		h.serveThumbnails(w, r)
 		return
 	}
