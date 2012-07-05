@@ -232,6 +232,20 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	http500(w, err)
 	log.Println("Create", size)
 	//
+	// Set URLs in FileInfo
+	//
+	u := &url.URL{
+		// Scheme: r.URL.Scheme,
+		// No host so we have a relative url
+		Path:   "/",
+	}
+	uString := u.String()
+	fi.Url = uString + escape(string(fi.Key)) + "/" +
+		escape(string(fi.Name))
+	fi.DeleteUrl = fi.Url
+	fi.DeleteType = "DELETE"
+	fi.ThumbnailUrl = uString + "thumbnails/" + escape(string(fi.Key))
+	//
 	// Create thumbnail
 	//
 	if isImage && size > 0 {
@@ -370,25 +384,6 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (fi *FileInfo) CreateUrls(r *http.Request, c appengine.Context) {
-	u := &url.URL{
-		Scheme: r.URL.Scheme,
-		Host:   appengine.DefaultVersionHostname(c),
-		Path:   "/",
-	}
-	uString := u.String()
-	fi.Url = uString + escape(string(fi.Key)) + "/" +
-		escape(string(fi.Name))
-	fi.DeleteUrl = fi.Url
-	fi.DeleteType = "DELETE"
-	if fi.ThumbnailUrl != "" && -1 == strings.Index(
-		r.Header.Get("Accept"),
-		"application/json",
-	) {
-		fi.ThumbnailUrl = uString + "thumbnails/" +
-			escape(string(fi.Key))
-	}
-}
 */
 
 // CreateThumbnail generates a thumbnail and adds it to the cache.
