@@ -6,7 +6,7 @@ Derived from the Go GAE server example included with the plugin.
 
 # Note
 
-jfu doesn't even compile yet.  Please don't try to use it for anything, as it will surely not work.
+jfu isn't quite ready yet.  Please don't try to use it for anything, as it will probably not work.
 
 
 # License
