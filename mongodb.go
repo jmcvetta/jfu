@@ -25,14 +25,14 @@ import (
 
 type mongoStore struct {
 	col *mgo.Collection // Collection where file info will be stored
-	fs  *mgo.GridFS     // GridFS where file blob will be stored
+	gfs *mgo.GridFS     // GridFS where file blob will be stored
 }
 
 // Exists checks whether a blob identified by key exists in the data store
 func (s mongoStore) Exists(key string) (result bool, err error) {
 	// blobKey := appengine.BlobKey(key)
 	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
-	q := s.fs.Find(bson.M{"_id": key})
+	q := s.gfs.Find(bson.M{"_id": key})
 	cnt, err := q.Count()
 	if err != nil {
 		return
@@ -49,7 +49,7 @@ func (s mongoStore) Exists(key string) (result bool, err error) {
 // or returns a FileNotFoundError if no such file exists.
 func (s mongoStore) ContentType(key string) (ct string, err error) {
 	var file mgo.GridFile
-	q := s.fs.Find(bson.M{"_id": key})
+	q := s.gfs.Find(bson.M{"_id": key})
 	err = q.One(&file)
 	switch {
 	case err == mgo.ErrNotFound:
@@ -61,7 +61,7 @@ func (s mongoStore) ContentType(key string) (ct string, err error) {
 }
 
 func (s mongoStore) Create(fi *FileInfo, r io.Reader) error {
-	file, err := s.fs.Create(fi.Name)
+	file, err := s.gfs.Create(fi.Name)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (s mongoStore) Get(key string) (fi FileInfo, r io.Reader, err error) {
 	// bi, err := blobstore.Stat(appengine.NewContext(r), blobKey)
 	// blobstore.Send(w, appengine.BlobKey(key))
 	id := bson.ObjectIdHex(key)
-	file, err := s.fs.OpenId(id)
+	file, err := s.gfs.OpenId(id)
 	if err != nil {
 		fi = FileInfo{
 			Error: err.Error(),
@@ -103,7 +103,12 @@ func (s mongoStore) Get(key string) (fi FileInfo, r io.Reader, err error) {
 	return
 }
 
+func (s mongoStore) Delete(key string) error {
+	id := bson.ObjectIdHex(key)
+	return s.gfs.RemoveId(id)
+}
+
 func NewMongoStore(gfs *mgo.GridFS) DataStore {
-	ms := mongoStore{fs: gfs}
+	ms := mongoStore{gfs: gfs}
 	return ms
 }

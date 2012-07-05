@@ -39,7 +39,7 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ms := mongoStore{fs: db.GridFS("")}
+	ms := mongoStore{gfs: db.GridFS("")}
 	//
 	// Create
 	//
@@ -61,9 +61,6 @@ func TestRoundTrip(t *testing.T) {
 		t.Error(err)
 	}
 	rbuf := new(bytes.Buffer)
-	t.Log(err)
-	t.Log("********************************************************************************")
-	t.Log(r)
 	io.Copy(rbuf, r)
 	retr := rbuf.String()
 	if retr != data {
@@ -71,5 +68,13 @@ func TestRoundTrip(t *testing.T) {
 		msg += "data: " + data + "\n"
 		msg += "retr: " + retr + "\n"
 		t.Error(msg)
+	}
+	//
+	// Delete
+	//
+	t.Log(key)
+	err = ms.Delete(key)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

@@ -36,9 +36,9 @@ import (
 	"regexp"
 	"strings"
 	// Register image handling libraries by importing them.
-	_ "image/png"
-	_ "image/jpeg"
 	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 )
 
 const (
@@ -70,7 +70,8 @@ type Config struct {
 
 type DataStore interface {
 	Create(*FileInfo, io.Reader) error           // Create a new file and return its key
-	Get(key string) (FileInfo, io.Reader, error) // Get the file blob associated with a key
+	Get(key string) (FileInfo, io.Reader, error) // Get the file blob identified by key
+	Delete(key string) error                     // Delete the file identified by key
 }
 
 // UploadHandler provides a functions to handle file upload and serve 
@@ -131,14 +132,13 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.get(w, r)
 	case "POST":
 		if len(params["_method"]) > 0 && params["_method"][0] == "DELETE" {
-			// h.delete(w, r)
-			http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
+			h.delete(w, r)
+			// http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
 		} else {
 			h.post(w, r)
 		}
 	case "DELETE":
-		// h.delete(w, r)
-		http.Error(w, "DELETE support not yet implmented", http.StatusNotImplemented)
+		h.delete(w, r)
 	default:
 		http.Error(w, "501 Not Implemented", http.StatusNotImplemented)
 	}
@@ -188,6 +188,7 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 
 // uploadFile handles the upload of a single file from a multipart form.  
 func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi *FileInfo) {
+	log.Println("CAPTION", p.Header.Get("caption"))
 	fi = &FileInfo{
 		Name: p.FileName(),
 		Type: p.Header.Get("Content-Type"),
@@ -311,20 +312,19 @@ func (h *UploadHandler) post(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(js))
 }
 
-
-/*
 func (h *UploadHandler) delete(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) != 3 {
+	if len(parts) != 3 || parts[1] == "" {
+		log.Println("Invalid URL:", r.URL)
+		http.Error(w, "404 Invalid URL", http.StatusNotFound)
 		return
 	}
-	if key := parts[1]; key != "" {
-		c := appengine.NewContext(r)
-		blobstore.Delete(c, appengine.BlobKey(key))
-		memcache.Delete(c, key)
-	}
+	key := parts[1]
+	log.Println("Delete", key)
+	err := (*h.Store).Delete(key)
+	http500(w, err)
+	return
 }
-*/
 
 func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
@@ -335,7 +335,7 @@ func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) 
 			if err == nil {
 				data = item.Value
 			} else {
-				if  fi, r, err := (*h.Store).Get(key); err == nil {
+				if fi, r, err := (*h.Store).Get(key); err == nil {
 					_, err = h.CreateThumbnail(&fi, r)
 				}
 			}
@@ -358,8 +358,6 @@ func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) 
 	}
 	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
-
-
 
 // CreateThumbnail generates a thumbnail and adds it to the cache.
 func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte, err error) {
