@@ -111,7 +111,6 @@ func escape(s string) string {
 }
 
 func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println("URL:", r.URL)
 	// Remove h.Prefix from the URL path - based on http.StripPrefix()
 	if !strings.HasPrefix(r.URL.Path, h.Prefix) {
 		http.NotFound(w, r)
@@ -146,6 +145,10 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		// Noop - not sure why JFU plugin sometimes calls this with no args
+		return
+	}
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) >= 2 && parts[1] == "thumbnails" {
 		h.serveThumbnails(w, r)
@@ -154,7 +157,7 @@ func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	//
 	//
 	if len(parts) != 3 || parts[1] == "" {
-		log.Println("Invalid URL:", r.URL)
+		log.Printf("Invalid URL: '%v'", r.URL)
 		http.Error(w, "404 Invalid URL", http.StatusNotFound)
 		return
 	}
