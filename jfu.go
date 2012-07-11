@@ -61,12 +61,12 @@ var (
 
 // Config holds configuration settings for an UploadHandler.
 type Config struct {
-	MinFileSize        int    // bytes
-	MaxFileSize        int    // bytes
+	MinFileSize        int // bytes
+	MaxFileSize        int // bytes
 	AcceptFileTypes    *regexp.Regexp
-	ExpirationTime     int    // seconds
-	ThumbnailMaxWidth  int    // pixels
-	ThumbnailMaxHeight int    // pixels
+	ExpirationTime     int // seconds
+	ThumbnailMaxWidth  int // pixels
+	ThumbnailMaxHeight int // pixels
 }
 
 // DataStore provides a simple interface to a blob store.
@@ -81,7 +81,7 @@ type UploadHandler struct {
 	Prefix string     // URL prefix to serve
 	Conf   *Config    // Configuration
 	Store  *DataStore // Persistant storage for files
-	Cache *mc.Conn // Cache for image thumbnails
+	Cache  *mc.Conn   // Cache for image thumbnails
 }
 
 // FileInfo describes a file that has been uploaded.
