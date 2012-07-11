@@ -50,7 +50,7 @@ var (
 	DefaultConfig = Config{
 		MinFileSize:        1,       // bytes
 		MaxFileSize:        5000000, // bytes
-		AcceptFileTypes:    IMAGE_TYPES,
+		AcceptFileTypes:    regexp.MustCompile(IMAGE_TYPES),
 		ExpirationTime:     300,
 		ThumbnailMaxWidth:  80,
 		ThumbnailMaxHeight: 80,
@@ -59,24 +59,24 @@ var (
 	FileNotFoundError = errors.New("File Not Found")
 )
 
-// Config is used to configure an UploadHandler.
+// Config holds configuration settings for an UploadHandler.
 type Config struct {
 	MinFileSize        int    // bytes
 	MaxFileSize        int    // bytes
-	AcceptFileTypes    string // TODO: Change this to a Regexp object
+	AcceptFileTypes    *regexp.Regexp
 	ExpirationTime     int    // seconds
 	ThumbnailMaxWidth  int    // pixels
 	ThumbnailMaxHeight int    // pixels
 }
 
+// DataStore provides a simple interface to a blob store.
 type DataStore interface {
 	Create(*FileInfo, io.Reader) error           // Create a new file and return its key
 	Get(key string) (FileInfo, io.Reader, error) // Get the file blob identified by key
 	Delete(key string) error                     // Delete the file identified by key
 }
 
-// UploadHandler provides a functions to handle file upload and serve 
-// thumbnails.
+// UploadHandler is an http Handler for uploading files and serving thumbnails.
 type UploadHandler struct {
 	Prefix string     // URL prefix to serve
 	Conf   *Config    // Configuration
@@ -199,8 +199,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	// Validate file type
 	//
-	re := regexp.MustCompile(h.Conf.AcceptFileTypes) // It's inefficient to recompile the regex every time.  
-	if re.MatchString(fi.Type) == false {
+	if h.Conf.AcceptFileTypes.MatchString(fi.Type) == false {
 		fi.Error = "acceptFileTypes"
 		return
 	}
@@ -256,7 +255,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	// Create thumbnail
 	//
 	if isImage && size > 0 {
-		_, err = h.CreateThumbnail(fi, &bThumb)
+		_, err = h.createThumbnail(fi, &bThumb)
 		if err != nil {
 			log.Println("Error creating thumbnail:", err)
 		}
@@ -339,7 +338,7 @@ func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) 
 				data = []byte(val)
 			} else {
 				if fi, r, err := (*h.Store).Get(key); err == nil {
-					_, err = h.CreateThumbnail(&fi, r)
+					_, err = h.createThumbnail(&fi, r)
 				}
 			}
 			if err == nil && len(data) > 3 {
@@ -362,8 +361,8 @@ func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) 
 	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
 
-// CreateThumbnail generates a thumbnail and adds it to the cache.
-func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte, err error) {
+// createThumbnail generates a thumbnail and adds it to the cache.
+func (h *UploadHandler) createThumbnail(fi *FileInfo, r io.Reader) (data []byte, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Println(rec)

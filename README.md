@@ -1,4 +1,4 @@
-#  jfu - Go library to support jQuery File Upload plugin
+#  jfu - Go + MongoDB + Memcache backend for jQuery File Upload plugin
 
 [Golang](http://golang.org) backend for the [jQuery File Upload](http://blueimp.github.com/jQuery-File-Upload/) plugin.
 
