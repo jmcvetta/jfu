@@ -109,6 +109,7 @@ func (s mongoStore) Delete(key string) error {
 	return s.gfs.RemoveId(id)
 }
 
+// NewMongoStore creates a new DataStore backed by MongoDB
 func NewMongoStore(gfs *mgo.GridFS) DataStore {
 	ms := mongoStore{gfs: gfs}
 	return ms
