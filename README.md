@@ -2,6 +2,10 @@
 
 [Golang](http://golang.org) backend for the [jQuery File Upload](http://blueimp.github.com/jQuery-File-Upload/) plugin.
 
+# Documentation
+
+See [pkgdoc](http://go.pkgdoc.org/github.com/jmcvetta/jfu) for API documentation.
+
 
 # License
 
