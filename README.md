@@ -4,7 +4,7 @@
 
 # Documentation
 
-See [pkgdoc](http://go.pkgdoc.org/github.com/jmcvetta/jfu) for API documentation.
+See [pkgdoc](http://go.pkgdoc.org/github.com/jmcvetta/jfu) for automatic documentation.
 
 
 # License
