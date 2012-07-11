@@ -4,7 +4,8 @@
 [Memcached](http://memcached.org) backend for the [jQuery File
 Upload](http://blueimp.github.com/jQuery-File-Upload/) plugin.
 
-All interaction with MongoDB is done thru a very simple interface, so adding
+All interaction with MongoDB is done thru a [simple
+interface](http://go.pkgdoc.org/github.com/jmcvetta/jfu#DataStore), so adding
 support for other datastores should be pretty easy.
 
 
