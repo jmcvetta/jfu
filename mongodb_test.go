@@ -1,6 +1,19 @@
 /*
  * Copyright (c) 2012 Jason McVetta.  This is Free Software, released under the
- * terms of the AGPL v3.  See www.gnu.org/licenses/agpl-3.0.html for details.
+ * terms of the WTFPL v2.  It comes without any warranty, express or implied.
+ * See http://sam.zoy.org/wtfpl/COPYING for more details.
+ * 
+ *
+ * Derived from: 
+ *
+ * jQuery File Upload Plugin GAE Go Example 2.0
+ * https://github.com/blueimp/jQuery-File-Upload
+ *
+ * Copyright 2011, Sebastian Tschan
+ * https://blueimp.net
+ *
+ * Original software by Tschan licensed under the MIT license:
+ * http://www.opensource.org/licenses/MIT
  */
 
 package jfu
