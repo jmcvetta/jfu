@@ -1,6 +1,11 @@
-#  jfu - Go + MongoDB + Memcache backend for jQuery File Upload plugin
+#  jfu - Go support for jQuery File Upload plugin
 
-[Golang](http://golang.org) backend for the [jQuery File Upload](http://blueimp.github.com/jQuery-File-Upload/) plugin.
+[Golang](http://golang.org) + [MongoDB](http://mongodb.org/) +
+[Memcached](http://memcached.org) backend for the [jQuery File
+Upload](http://blueimp.github.com/jQuery-File-Upload/) plugin.
+
+All interaction with MongoDB is done thru a very simple interface, so adding
+support for other datastores should be pretty easy.
 
 
 # Documentation
