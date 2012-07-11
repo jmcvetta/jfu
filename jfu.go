@@ -25,7 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/bmizerany/mc"
 	"github.com/jmcvetta/jfu/resize"
 	"image"
 	"image/png"
@@ -36,6 +36,10 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	// Register image handling libraries by importing them.
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 )
 
 const (
@@ -67,16 +71,17 @@ type Config struct {
 
 type DataStore interface {
 	Create(*FileInfo, io.Reader) error           // Create a new file and return its key
-	Get(key string) (FileInfo, io.Reader, error) // Get the file blob associated with a key
+	Get(key string) (FileInfo, io.Reader, error) // Get the file blob identified by key
+	Delete(key string) error                     // Delete the file identified by key
 }
 
 // UploadHandler provides a functions to handle file upload and serve 
 // thumbnails.
 type UploadHandler struct {
-	Prefix string           // URL prefix to serve
-	Conf   *Config          // Configuration
-	Store  *DataStore       // Persistant storage for files
-	Cache  *memcache.Client // Cache for image thumbnails
+	Prefix string     // URL prefix to serve
+	Conf   *Config    // Configuration
+	Store  *DataStore // Persistant storage for files
+	Cache *mc.Conn // Cache for image thumbnails
 }
 
 // FileInfo describes a file that has been uploaded.
@@ -113,8 +118,6 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.URL.Path = r.URL.Path[len(h.Prefix):]
-	log.Println("URL minus prefix:", r.URL)
-	log.Println("r", r)
 	params, err := url.ParseQuery(r.URL.RawQuery)
 	http500(w, err)
 	w.Header().Add("Access-Control-Allow-Origin", "*")
@@ -130,14 +133,13 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.get(w, r)
 	case "POST":
 		if len(params["_method"]) > 0 && params["_method"][0] == "DELETE" {
-			// h.delete(w, r)
-			http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
+			h.delete(w, r)
+			// http.Error(w, "POST-delete support not yet implmented", http.StatusNotImplemented)
 		} else {
 			h.post(w, r)
 		}
 	case "DELETE":
-		// h.delete(w, r)
-		http.Error(w, "DELETE support not yet implmented", http.StatusNotImplemented)
+		h.delete(w, r)
 	default:
 		http.Error(w, "501 Not Implemented", http.StatusNotImplemented)
 	}
@@ -145,7 +147,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *UploadHandler) get(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
-	if parts[1] == "thumbnails" {
+	if len(parts) >= 2 && parts[1] == "thumbnails" {
 		h.serveThumbnails(w, r)
 		return
 	}
@@ -205,7 +207,7 @@ func (h *UploadHandler) uploadFile(w http.ResponseWriter, p *multipart.Part) (fi
 	//
 	// Max + 1 for LimitedReader size, so we can detect below if file size is 
 	// greater than max.
-	lr := &io.LimitedReader{R: p, N: int64(h.Conf.MaxFileSize)}
+	lr := &io.LimitedReader{R: p, N: int64(h.Conf.MaxFileSize + 1)}
 	var bSave bytes.Buffer  // Buffer to be saved
 	var bThumb bytes.Buffer // Buffer to be thumbnailed
 	var wr io.Writer
@@ -310,31 +312,30 @@ func (h *UploadHandler) post(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, string(js))
 }
 
-
-/*
 func (h *UploadHandler) delete(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) != 3 {
+	if len(parts) != 3 || parts[1] == "" {
+		log.Println("Invalid URL:", r.URL)
+		http.Error(w, "404 Invalid URL", http.StatusNotFound)
 		return
 	}
-	if key := parts[1]; key != "" {
-		c := appengine.NewContext(r)
-		blobstore.Delete(c, appengine.BlobKey(key))
-		memcache.Delete(c, key)
-	}
+	key := parts[1]
+	log.Println("Delete", key)
+	err := (*h.Store).Delete(key)
+	http500(w, err)
+	return
 }
-*/
 
 func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) == 3 {
 		if key := parts[2]; key != "" {
 			var data []byte
-			item, err := h.Cache.Get(key)
+			val, _, _, err := h.Cache.Get(key)
 			if err == nil {
-				data = item.Value
+				data = []byte(val)
 			} else {
-				if  fi, r, err := (*h.Store).Get(key); err == nil {
+				if fi, r, err := (*h.Store).Get(key); err == nil {
 					_, err = h.CreateThumbnail(&fi, r)
 				}
 			}
@@ -358,8 +359,6 @@ func (h *UploadHandler) serveThumbnails(w http.ResponseWriter, r *http.Request) 
 	http.Error(w, "404 Not Found", http.StatusNotFound)
 }
 
-
-
 // CreateThumbnail generates a thumbnail and adds it to the cache.
 func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte, err error) {
 	defer func() {
@@ -370,12 +369,7 @@ func (h *UploadHandler) CreateThumbnail(fi *FileInfo, r io.Reader) (data []byte,
 			data, _ = base64.StdEncoding.DecodeString(s)
 			fi.ThumbnailUrl = "data:image/gif;base64," + s
 		}
-		item := memcache.Item{
-			Key:        string(fi.Key),
-			Value:      data,
-			Expiration: int32(h.Conf.ExpirationTime),
-		}
-		h.Cache.Add(&item)
+		h.Cache.Set(fi.Key, string(data), 0, 0, h.Conf.ExpirationTime)
 	}()
 	img, _, err := image.Decode(r)
 	if err != nil {
