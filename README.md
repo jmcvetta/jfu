@@ -5,7 +5,7 @@
 
 # License
 
-Released under the [AGPL v3](http://www.gnu.org/licenses/agpl-3.0.html).
+Released under the [WTFPL v2](http://sam.zoy.org/wtfpl/COPYING).
 
 Derived from Sebastian Tschan's MIT-licensed example code, included with the
 jQuery File Upload plugin, for a Google AppEngine-based Go backend.
