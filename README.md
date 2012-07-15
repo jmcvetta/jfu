@@ -14,6 +14,12 @@ support for other datastores should be pretty easy.
 See [pkgdoc](http://go.pkgdoc.org/github.com/jmcvetta/jfu) for automatic documentation.
 
 
+# Goci Status:
+
+[![](http://goci.me/project/image/github.com/jmcvetta/jfu)](http://goci.me/project/github.com/jmcvetta/jfu)
+
+
+
 # Example
 
 See [jfu-example](https://github.com/jmcvetta/jfu-example) for a simple demo app.
