@@ -123,10 +123,10 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add(
 		"Access-Control-Allow-Methods",
 		// "OPTIONS, HEAD, GET, POST, PUT, DELETE",
-		"GET, POST, PUT, DELETE",
+		"OPTIONS, GET, POST, PUT, DELETE",
 	)
 	switch r.Method {
-	// case "OPTIONS":
+	case "OPTIONS":
 	// case "HEAD":
 	case "GET":
 		h.get(w, r)
